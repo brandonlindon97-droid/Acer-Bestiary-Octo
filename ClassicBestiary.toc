@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Classic Bestiary
+## Notes: Adds known creature abilities to the default WoW tooltip. Hold Ctrl for details.
+## Version: 2.5.1
+
+db.lua
+ClassicBestiary.lua
