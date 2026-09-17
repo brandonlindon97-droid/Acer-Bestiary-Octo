@@ -5866,6 +5866,36 @@ local function CB_GetSpellDurationSeconds(spellID)
     return nil
 end
 
+-- $o1/$o2/$o3 are the total periodic amounts used by Vanilla Spell.dbc
+-- descriptions.  They combine the per-tick effect magnitude ($sN) with the
+-- number of ticks represented by the spell duration and EffectAmplitude.
+-- Keep this separate from CB_GetSpellEffectValue(): $sN intentionally returns
+-- a display string, while $oN must retain the numeric range long enough to
+-- multiply it by the tick count.
+local function CB_GetSpellPeriodicTotal(spellID, effectIndex)
+    local perTick = CB_GetSpellEffectValue(spellID, effectIndex)
+    local duration = CB_GetSpellDurationSeconds(spellID)
+    local amplitude = CB_GetSpellEffectAmplitude(spellID, effectIndex)
+    if not perTick or not duration or not amplitude or duration <= 0 or amplitude <= 0 then return nil end
+
+    -- CB_GetSpellEffectValue() produces either a single number or a min-max
+    -- range. Spell.dbc periodic effects use integral tick counts; round the
+    -- millisecond-to-second conversion to the nearest full tick.
+    local ticks = math.floor((duration / amplitude) + 0.5)
+    if ticks < 1 then return nil end
+
+    -- Vanilla 1.12 uses Lua 5.0, which has string.find captures but does not
+    -- provide the Lua 5.1 string.match convenience function.
+    local _start, _end, minimum, maximum = string.find(perTick, "^(%-?%d+)%-(%-?%d+)$")
+    if minimum and maximum then
+        return tostring(tonumber(minimum) * ticks) .. "-" .. tostring(tonumber(maximum) * ticks)
+    end
+
+    local value = tonumber(perTick)
+    if value == nil then return nil end
+    return tostring(value * ticks)
+end
+
 local function CB_FormatSpellDescription(text, spellID)
     if not text or text == "" then return text end
 
@@ -5888,6 +5918,18 @@ local function CB_FormatSpellDescription(text, spellID)
         local formatted = CB_FormatSeconds(value)
         if formatted then return formatted end
         return "$" .. (refID or "") .. "t" .. effectIndex
+    end)
+
+    -- $o1/$o2/$o3 are periodic totals: per-tick magnitude multiplied by the
+    -- number of effect ticks over the spell duration.  Like $sN and $tN,
+    -- Vanilla descriptions may use a spell ID prefix to reference another
+    -- spell's effect (for example, $12345o1).
+    text = string.gsub(text, "$(%d*)o([1-3])", function(refID, effectIndex)
+        local id = spellID
+        if refID and refID ~= "" then id = tonumber(refID) end
+        local value = CB_GetSpellPeriodicTotal(id, tonumber(effectIndex))
+        if value ~= nil then return value end
+        return "$" .. (refID or "") .. "o" .. effectIndex
     end)
 
     -- $d is the spell's base duration, in seconds.  The raw token does not
